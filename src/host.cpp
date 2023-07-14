@@ -21,8 +21,14 @@
 
 using std::vector;
 
-static const int DATA_SIZE = 2;
+static const int DATA_SIZE = 5;
 static const int ValueMaxSize = 8;
+typedef char ValItem[ValueMaxSize];
+struct ReqItem {
+    char op;
+    int key;
+    ValItem value;
+};
 
 static const std::string error_message = 
     "Error: Result mismatch:\n"
@@ -47,45 +53,37 @@ int main(int argc, char** argv)
     cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
     cl::Kernel kernel(program, "krnl_kvs", &err);
 
-    OCL_CHECK(err, cl::Buffer buffer_op(context, CL_MEM_READ_ONLY, sizeof(char) * DATA_SIZE, nullptr, &err));
-    OCL_CHECK(err, cl::Buffer buffer_key(context, CL_MEM_READ_ONLY, sizeof(int) * DATA_SIZE, nullptr, &err));
-    // how to define the size of value and res?
-    OCL_CHECK(err, cl::Buffer buffer_value(context, CL_MEM_READ_ONLY, sizeof(char) * DATA_SIZE * ValueMaxSize, nullptr, &err));
-    OCL_CHECK(err, cl::Buffer buffer_res(context, CL_MEM_WRITE_ONLY, sizeof(char) * DATA_SIZE * ValueMaxSize, nullptr, &err));
+    OCL_CHECK(err, cl::Buffer buffer_req(context, CL_MEM_READ_ONLY, sizeof(ReqItem) * DATA_SIZE, nullptr, &err))
+    OCL_CHECK(err, cl::Buffer buffer_res(context, CL_MEM_WRITE_ONLY, sizeof(ValItem) * DATA_SIZE, nullptr, &err));
 
-    OCL_CHECK(err, kernel.setArg(0, buffer_op));
-    OCL_CHECK(err, kernel.setArg(1, buffer_key));
-    OCL_CHECK(err, kernel.setArg(2, buffer_value));
-    OCL_CHECK(err, kernel.setArg(3, buffer_res));
-    OCL_CHECK(err, kernel.setArg(4, DATA_SIZE));
+    OCL_CHECK(err, kernel.setArg(0, buffer_req));
+    OCL_CHECK(err, kernel.setArg(1, buffer_res));
+    OCL_CHECK(err, kernel.setArg(2, DATA_SIZE));
 
-    char* ptr_op = (char*)q.enqueueMapBuffer(buffer_op, CL_TRUE, CL_MAP_WRITE, 0, sizeof(char) * DATA_SIZE);
-    int* ptr_key = (int*)q.enqueueMapBuffer(buffer_key, CL_TRUE, CL_MAP_WRITE, 0, sizeof(int) * DATA_SIZE);
-    // how to define the size of value and res?
-    char* ptr_value = (char*)q.enqueueMapBuffer(buffer_value, CL_TRUE, CL_MAP_WRITE, 0, sizeof(char) * DATA_SIZE * ValueMaxSize);
-    char* ptr_res = (char*)q.enqueueMapBuffer(buffer_res, CL_TRUE, CL_MAP_WRITE | CL_MAP_READ, 0, sizeof(char) * DATA_SIZE * ValueMaxSize);
+    ReqItem* ptr_req = (ReqItem*)q.enqueueMapBuffer(buffer_req, CL_TRUE, CL_MAP_WRITE, 0, sizeof(ReqItem) * DATA_SIZE);
+    ValItem* ptr_res = (ValItem*)q.enqueueMapBuffer(buffer_res, CL_TRUE, CL_MAP_WRITE | CL_MAP_READ, 0, sizeof(ValItem) * DATA_SIZE);
 
-    memset(ptr_res, '\0', sizeof(char) * DATA_SIZE * ValueMaxSize);
-    ptr_op[0] = 'I';
-    ptr_key[0] = 1;
-    strcpy(ptr_value + 0 * ValueMaxSize, "hello");
-    ptr_op[1] = 'S';
-    ptr_key[1] = 1;
+    memset(ptr_res, '\0', sizeof(ValItem) * DATA_SIZE);
+    ptr_req[0] = (ReqItem){'I', 1, "hello"};
+    ptr_req[1] = (ReqItem){'S', 1, "\0"};
+    ptr_req[2] = (ReqItem){'S', 2, "\0"};
+    ptr_req[3] = (ReqItem){'I', 2, "world"};
+    ptr_req[4] = (ReqItem){'S', 2, "\0"};
 
-    q.enqueueMigrateMemObjects({buffer_op, buffer_key, buffer_value}, 0);
+    q.enqueueMigrateMemObjects({buffer_req}, 0);
     q.enqueueTask(kernel);
     q.enqueueMigrateMemObjects({buffer_res}, CL_MIGRATE_MEM_OBJECT_HOST);
     q.finish();
 
     bool match = true;
-    std::unordered_map<int, char*> umap;
+    std::unordered_map<int, ValItem> umap;
     for (int i = 0; i < DATA_SIZE; i++) {
-        if (ptr_op[i] == 'I') umap[ptr_key[i]] = ptr_value + i * ValueMaxSize;
+        if (ptr_req[i].op == 'I') strcpy(umap[ptr_req[i].key], ptr_req[i].value);
         char* host_result = nullptr;
-        if (ptr_op[i] == 'S') host_result = umap[ptr_key[i]];
-        if (ptr_op[i] == 'S' && strcmp(host_result, ptr_res + i * ValueMaxSize)) {
-            std::cout << host_result << " " << ptr_res + i * ValueMaxSize << std::endl;
-            printf(error_message.c_str(), i, host_result, ptr_res + i * ValueMaxSize);
+        if (ptr_req[i].op == 'S') host_result = umap[ptr_req[i].key];
+        if (ptr_req[i].op == 'S' && strcmp(host_result, ptr_res[i])) {
+            std::cout << host_result << " " << ptr_res[i] << std::endl;
+            printf(error_message.c_str(), i, host_result, ptr_res[i]);
             match = false;
             break;
         }

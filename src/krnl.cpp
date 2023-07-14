@@ -38,6 +38,15 @@ struct vItem    // value item
 vItem values[ValueNum];     // values
 int vidx = 0;               // 值索引
 
+struct ReqItem {
+    char op;
+    int key;
+    char value[ValueMaxSize];
+};
+
+typedef char ValItem[ValueMaxSize];
+
+
 
 void hash_init() {
     for (int i = 0; i < HashItemNum; i++) {
@@ -64,10 +73,10 @@ int find(int key) {     // 返回值地址
     return -1;
 }
 
-void insert(int key, char* value) {
+int insert(int key, char* value) {
     if (find(key) != -1) {
         printf("The key already exist\n");
-        return;
+        return 0;
     }
     int h = hash(key);
 
@@ -83,19 +92,26 @@ void insert(int key, char* value) {
     hTable[hidx].next = hTable[h].next;
     hTable[h].next = hidx;
     hidx++; vidx++;
+    return 1;
 }
 
 
 extern "C" {
-void krnl_kvs(char* op, int* key, char* value, char* res, int size) {
+void krnl_kvs(ReqItem* reqs, ValItem* res, int size) {
     hash_init();
     for (int i = 0; i < size; i++) {
-        if (op[i] == 'I') {
-            insert(key[i], value + i * ValueMaxSize);
+        if (reqs[i].op == 'I') {
+            if(insert(reqs[i].key, reqs[i].value))
+                printf("Insert (%d, %s)\n", reqs[i].key, reqs[i].value);
         }
         else {
-            int v_addr = find(key[i]);
-            strcpy(res + i * ValueMaxSize, values[v_addr].val);
+            int v_addr = find(reqs[i].key);
+            if (v_addr == -1) {
+                printf("Search result: Not find\n");
+                continue;
+            }
+            printf("Search result: (%d, %s)\n", reqs[i].key, values[v_addr].val);
+            strcpy(res[i], values[v_addr].val);
         }
     }
 }
