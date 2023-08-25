@@ -21,7 +21,7 @@
 
 using std::vector;
 
-static const int DATA_SIZE = 5;
+static const int DATA_SIZE = 7;
 static const int ValueMaxSize = 8;
 typedef char ValItem[ValueMaxSize];
 struct ReqItem {
@@ -54,7 +54,7 @@ int main(int argc, char** argv)
     cl::Kernel kernel(program, "krnl_kvs", &err);
 
     OCL_CHECK(err, cl::Buffer buffer_req(context, CL_MEM_READ_ONLY, sizeof(ReqItem) * DATA_SIZE, nullptr, &err))
-    OCL_CHECK(err, cl::Buffer buffer_res(context, CL_MEM_WRITE_ONLY, sizeof(ValItem) * DATA_SIZE, nullptr, &err));
+    OCL_CHECK(err, cl::Buffer buffer_res(context, CL_MEM_READ_WRITE, sizeof(ValItem) * DATA_SIZE, nullptr, &err));
 
     OCL_CHECK(err, kernel.setArg(0, buffer_req));
     OCL_CHECK(err, kernel.setArg(1, buffer_res));
@@ -69,6 +69,8 @@ int main(int argc, char** argv)
     ptr_req[2] = (ReqItem){'S', 2, "\0"};
     ptr_req[3] = (ReqItem){'I', 2, "world"};
     ptr_req[4] = (ReqItem){'S', 2, "\0"};
+    ptr_req[5] = (ReqItem){'I', 14, "hihi"};
+    ptr_req[6] = (ReqItem){'S', 14, "\0"};
 
     q.enqueueMigrateMemObjects({buffer_req}, 0);
     q.enqueueTask(kernel);
@@ -85,7 +87,7 @@ int main(int argc, char** argv)
             std::cout << host_result << " " << ptr_res[i] << std::endl;
             printf(error_message.c_str(), i, host_result, ptr_res[i]);
             match = false;
-            break;
+            // break;
         }
     }
 

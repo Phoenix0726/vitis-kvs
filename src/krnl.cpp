@@ -11,7 +11,7 @@ void strcpy(char* a, char* b) {
         a = nullptr;
         return;
     }
-    for (int i = 0; b[i] != '\0' && i < ValueMaxSize; i++)
+    for (int i = 0; i < ValueMaxSize; i++)
         a[i] = b[i];
 }
 
@@ -21,6 +21,8 @@ int strlen(char* s) {
         i++;
     return i;
 }
+
+typedef char ValItem[ValueMaxSize];
 
 struct hItem {
     int key;
@@ -33,7 +35,7 @@ int hidx = BucketNum;       // 哈希表索引
 struct vItem    // value item
 {
     int size;
-    char val[ValueMaxSize];
+    ValItem val;
 };
 vItem values[ValueNum];     // values
 int vidx = 0;               // 值索引
@@ -41,12 +43,8 @@ int vidx = 0;               // 值索引
 struct ReqItem {
     char op;
     int key;
-    char value[ValueMaxSize];
+    ValItem value;
 };
-
-typedef char ValItem[ValueMaxSize];
-
-
 
 void hash_init() {
     for (int i = 0; i < HashItemNum; i++) {
@@ -55,6 +53,8 @@ void hash_init() {
     }
     for (int i = 0; i < ValueNum; i++) {
         values[i].size = -1;
+        for (int j = 0; j < ValueMaxSize; j++)
+            values[i].val[j] = '\0';
     }
 }
 
