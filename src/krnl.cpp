@@ -19,13 +19,19 @@ ull hash2(char* key, int ksize) {   // 求key对应的mark
     return sum;
 }
 
+bool equal(char* a, char* b, int size) {
+    for (int i = 0; i < size; i++)
+        if (a[i] != b[i])
+            return false;
+    return true;
+}
+
 int find(char* key, int ksize) {
     int i = hash1(key, ksize);
     int p = hTable[i].next;
     while (p != -1) {
-        if (hash2(key, ksize) == hTable[p].mk.mark){
+        if (hTable[p].tag && hash2(key, ksize) == hTable[p].mk.mark || !hTable[p].tag && equal(key, hTable[p].mk.key, MarkSize))
             return hTable[p].kv_addr;
-        }
         p = hTable[p].next;
     }
     return -1;
@@ -48,8 +54,14 @@ void insert_kv(int ksize, int vsize, char* key, char* value, Heap* heap) {
 void insert_h(int ksize, int vsize, char* key, char* value, Heap* heap) {
     int h = hash1(key, ksize);
     int hidx = heap->hp / sizeof(hItem);
-    hTable[hidx].tag = true;
-    hTable[hidx].mk.mark = hash2(key, ksize);
+    if (ksize > MarkSize) {     // 存标记
+        hTable[hidx].tag = true;
+        hTable[hidx].mk.mark = hash2(key, ksize);
+    }
+    else {  // 存key本身
+        hTable[hidx].tag = false;
+        strcpy(key, hTable[hidx].mk.key, ksize);
+    }
     hTable[hidx].kv_addr = heap->kvp;
 
     hTable[hidx].next = hTable[h].next;
