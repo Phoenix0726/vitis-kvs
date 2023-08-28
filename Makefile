@@ -1,4 +1,4 @@
-TARGET := hw
+TARGET := sw_emu
 PLATFORM ?= xilinx_u250_gen3x16_xdma_3_1_202020_1
 SRCDIR := src
 BUILD_DIR := $(TARGET)

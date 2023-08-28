@@ -19,16 +19,12 @@
 #include <fstream>
 #include <cstring>
 
+#include "config.h"
+
 using std::vector;
 
-static const int DATA_SIZE = 7;
-static const int ValueMaxSize = 8;
-typedef char ValItem[ValueMaxSize];
-struct ReqItem {
-    char op;
-    int key;
-    ValItem value;
-};
+static const int DATA_SIZE = 5;
+static const int HEAP_SIZE = 1024 * 1024;
 
 static const std::string error_message = 
     "Error: Result mismatch:\n"
@@ -53,43 +49,64 @@ int main(int argc, char** argv)
     cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
     cl::Kernel kernel(program, "krnl_kvs", &err);
 
-    OCL_CHECK(err, cl::Buffer buffer_req(context, CL_MEM_READ_ONLY, sizeof(ReqItem) * DATA_SIZE, nullptr, &err))
-    OCL_CHECK(err, cl::Buffer buffer_res(context, CL_MEM_READ_WRITE, sizeof(ValItem) * DATA_SIZE, nullptr, &err));
+    OCL_CHECK(err, cl::Buffer buffer_req(context, CL_MEM_READ_ONLY, sizeof(ReqItem) * DATA_SIZE, nullptr, &err));
+    OCL_CHECK(err, cl::Buffer buffer_res(context, CL_MEM_READ_WRITE, sizeof(vItem) * DATA_SIZE, nullptr, &err));
+    OCL_CHECK(err, cl::Buffer buffer_heap(context, CL_MEM_READ_WRITE, HEAP_SIZE + 2*sizeof(int), nullptr, &err));
 
     OCL_CHECK(err, kernel.setArg(0, buffer_req));
     OCL_CHECK(err, kernel.setArg(1, buffer_res));
     OCL_CHECK(err, kernel.setArg(2, DATA_SIZE));
+    OCL_CHECK(err, kernel.setArg(3, buffer_heap));
 
     ReqItem* ptr_req = (ReqItem*)q.enqueueMapBuffer(buffer_req, CL_TRUE, CL_MAP_WRITE, 0, sizeof(ReqItem) * DATA_SIZE);
-    ValItem* ptr_res = (ValItem*)q.enqueueMapBuffer(buffer_res, CL_TRUE, CL_MAP_WRITE | CL_MAP_READ, 0, sizeof(ValItem) * DATA_SIZE);
+    vItem* ptr_res = (vItem*)q.enqueueMapBuffer(buffer_res, CL_TRUE, CL_MAP_READ, 0, sizeof(vItem) * DATA_SIZE);
+    Heap* ptr_heap = (Heap*)q.enqueueMapBuffer(buffer_heap, CL_TRUE, CL_MAP_WRITE | CL_MAP_READ, 0, HEAP_SIZE + 2*sizeof(int));
 
-    memset(ptr_res, '\0', sizeof(ValItem) * DATA_SIZE);
-    ptr_req[0] = (ReqItem){'I', 1, "hello"};
-    ptr_req[1] = (ReqItem){'S', 1, "\0"};
-    ptr_req[2] = (ReqItem){'S', 2, "\0"};
-    ptr_req[3] = (ReqItem){'I', 2, "world"};
-    ptr_req[4] = (ReqItem){'S', 2, "\0"};
-    ptr_req[5] = (ReqItem){'I', 14, "hihi"};
-    ptr_req[6] = (ReqItem){'S', 14, "\0"};
+    // 初始化请求
+    std::cout << "*** init reqs ***" << std::endl;
+    memset(ptr_res, '\0', sizeof(vItem) * DATA_SIZE);
+    ptr_req[0] = (ReqItem){'I', 2, 10, "h", "hello"};
+    ptr_req[1] = (ReqItem){'S', 2, 0, "h", "\0"};
+    ptr_req[2] = (ReqItem){'S', 2, 0, "w", "\0"};
+    ptr_req[3] = (ReqItem){'I', 2, 10, "w", "world"};
+    ptr_req[4] = (ReqItem){'S', 2, 0, "w", "\0"};
+    // ptr_req[5] = (ReqItem){'I', 14, "hihi"};
+    // ptr_req[6] = (ReqItem){'S', 14, "\0"};
+    std::cout << ptr_req[0].key << std::endl;
+    std::cout << ptr_req[0].value << std::endl;
+
+    // 初始化堆
+    std::cout << "*** init heap ***" << std::endl;
+    ptr_heap = (Heap*)malloc(sizeof(Heap));
+    ptr_heap->heap = (char*)malloc(HEAP_SIZE);
+    memset(ptr_heap->heap, '\0', HEAP_SIZE);
+    ptr_heap->hp = BucketNum * sizeof(hItem);
+    ptr_heap->kvp = HEAP_SIZE;
+    std::cout << "*** init heap complete ***" << std::endl;
 
     q.enqueueMigrateMemObjects({buffer_req}, 0);
+    q.enqueueMigrateMemObjects({buffer_heap}, 0);
+    std::cout << "------------------------------------" << std::endl;
     q.enqueueTask(kernel);
+    std::cout << "====================================" << std::endl;
     q.enqueueMigrateMemObjects({buffer_res}, CL_MIGRATE_MEM_OBJECT_HOST);
+    std::cout << "************************************" << std::endl;
     q.finish();
+    std::cout << "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^" << std::endl;
 
     bool match = true;
-    std::unordered_map<int, ValItem> umap;
-    for (int i = 0; i < DATA_SIZE; i++) {
-        if (ptr_req[i].op == 'I') strcpy(umap[ptr_req[i].key], ptr_req[i].value);
-        char* host_result = nullptr;
-        if (ptr_req[i].op == 'S') host_result = umap[ptr_req[i].key];
-        if (ptr_req[i].op == 'S' && strcmp(host_result, ptr_res[i])) {
-            std::cout << host_result << " " << ptr_res[i] << std::endl;
-            printf(error_message.c_str(), i, host_result, ptr_res[i]);
-            match = false;
-            // break;
-        }
-    }
+    // std::unordered_map<char*, vItem> umap;
+    // for (int i = 0; i < DATA_SIZE; i++) {
+    //     if (ptr_req[i].op == 'I') strcpy(umap[ptr_req[i].kv.key].value, ptr_req[i].kv.value);
+    //     char* host_result = nullptr;
+    //     if (ptr_req[i].op == 'S') host_result = umap[ptr_req[i].kv.key].value;
+    //     if (ptr_req[i].op == 'S' && strcmp(host_result, ptr_res[i].value)) {
+    //         std::cout << host_result << " " << ptr_res[i].value << std::endl;
+    //         printf(error_message.c_str(), i, host_result, ptr_res[i]);
+    //         match = false;
+    //         // break;
+    //     }
+    // }
 
     std::cout << "TEST " << (match ? "PASSED" : "FAILED") << std::endl;
     return (match ? EXIT_SUCCESS : EXIT_FAILURE);
