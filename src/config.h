@@ -5,6 +5,7 @@
 #define HashItemNum BucketNum * 4
 #define kvNum HashItemNum
 #define MarkSize 8
+#define HEAP_SIZE 1024 * 1024
 
 typedef long long ll;
 typedef unsigned long long ull;
@@ -41,8 +42,8 @@ struct ReqItem {    // 请求条目
 };
 
 struct Heap {
-    char* heap;
-    int hp, kvp;
+    char heap[HEAP_SIZE];
+    int hp, kvp;    // hp指向插入哈希条目位置，kvp指向插入kv条目位置 hp=>-------<=kvp
 };
 
 #endif

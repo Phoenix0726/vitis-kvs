@@ -7,7 +7,6 @@ hItem* hTable;
 int hash1(char* key, int ksize) {   // 求hash条目位置
     ull sum = 0;
     for (int i = 0; i < ksize && key[i] != '\0'; i++) {
-        printf("### hash1 %d ###\n");
         sum = sum * 113 + key[i];
     }
     return sum % BucketNum;
@@ -21,11 +20,8 @@ ull hash2(char* key, int ksize) {   // 求key对应的mark
 }
 
 int find(char* key, int ksize) {
-    printf("--- find ---\n");
     int i = hash1(key, ksize);
-    printf("=== find ===\n");
-    int p = hTable[p].next;
-    printf("^^^ find ^^^\n");
+    int p = hTable[i].next;
     while (p != -1) {
         if (hash2(key, ksize) == hTable[p].mk.mark){
             return hTable[p].kv_addr;
@@ -68,34 +64,39 @@ void insert(int ksize, int vsize, char* key, char* value, Heap* heap) {
         return;
     }
     // 插入kv对
-    printf("insert_kv\n");
     insert_kv(ksize, vsize, key, value, heap);
     // 插入表条目
-    printf("insert_h\n");
     insert_h(ksize, vsize, key, value, heap);
 }
 
 
 extern "C" {
-void krnl_kvs(ReqItem* reqs, vItem* res, int batchsize, Heap* heap) {
+void krnl_kvs(char* reqs, char* res, int batchsize, Heap* heap) {
     hTable = (hItem*)(heap->heap);
     for (int i = 0; i < batchsize; i++) {
-        if (reqs[i].op == 'I') {
-            printf("req %d\n", i);
-            printf("ksize: %d vsize: %d\n", reqs[i].ksize, reqs[i].vsize);
-            // printf("ksize: %d vsize: %d key: %s value: %s\n", reqs[i].ksize, reqs[i].vsize, reqs[i].key, reqs[i].value);
-            insert(reqs[i].ksize, reqs[i].vsize, reqs[i].key, reqs[i].value, heap);
+        // 解析请求
+        char op = *reqs;
+        int ksize = *(int*)(reqs + 1);
+        int vsize = *(int*)(reqs + 5);
+        char* key = reqs + 9;
+        char* value = reqs + 9 + ksize;
+        reqs += 9 + ksize + vsize;
+
+        if (op == 'I') {
+            insert(ksize, vsize, key, value, heap);
         }
-        else if (reqs[i].op == 'S') {
-            printf("req %d\n", i);
-            int kv_addr = find(reqs[i].key, reqs[i].ksize);
+        else if (op == 'S') {
+            int kv_addr = find(key, ksize);
             if (kv_addr == -1) {
                 printf("Search result: Not find\n");
+                *(int*)res = 0;
+                res += sizeof(int);
                 continue;
             }
-
-            res[i].vsize = *(int*)(heap->heap + kv_addr);
-            strcpy((char*)(heap->heap + kv_addr + sizeof(int)), res[i].value, res[i].vsize);
+            *(int*)res = *(int*)(heap->heap + kv_addr + sizeof(int));
+            strcpy(heap->heap + kv_addr + 2 * sizeof(int) + ksize, res + sizeof(int), *(int*)res);
+            printf("Search result: %s\n", heap->heap + kv_addr + 2 * sizeof(int) + ksize);
+            res += sizeof(int) + *(int*)res;
         }
     }
 }
