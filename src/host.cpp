@@ -52,7 +52,7 @@ int main(int argc, char** argv)
 
     OCL_CHECK(err, cl::Buffer buffer_req(context, CL_MEM_READ_ONLY, REQ_SIZE, nullptr, &err));
     OCL_CHECK(err, cl::Buffer buffer_res(context, CL_MEM_READ_WRITE, RES_SIZE, nullptr, &err));
-    OCL_CHECK(err, cl::Buffer buffer_heap(context, CL_MEM_READ_WRITE, HEAP_SIZE + 2*sizeof(int), nullptr, &err));
+    OCL_CHECK(err, cl::Buffer buffer_heap(context, CL_MEM_READ_WRITE, HEAP_SIZE, nullptr, &err));
 
     OCL_CHECK(err, kernel.setArg(0, buffer_req));
     OCL_CHECK(err, kernel.setArg(1, buffer_res));
@@ -61,7 +61,7 @@ int main(int argc, char** argv)
 
     char* ptr_req = (char*)q.enqueueMapBuffer(buffer_req, CL_TRUE, CL_MAP_WRITE, 0, REQ_SIZE);
     char* ptr_res = (char*)q.enqueueMapBuffer(buffer_res, CL_TRUE, CL_MAP_READ, 0, RES_SIZE);
-    Heap* ptr_heap = (Heap*)q.enqueueMapBuffer(buffer_heap, CL_TRUE, CL_MAP_WRITE | CL_MAP_READ, 0, HEAP_SIZE + 2*sizeof(int));
+    char* ptr_heap = (char*)q.enqueueMapBuffer(buffer_heap, CL_TRUE, CL_MAP_WRITE | CL_MAP_READ, 0, HEAP_SIZE);
 
     // 初始化请求
     std::cout << "*** init reqs ***" << std::endl;
@@ -87,11 +87,11 @@ int main(int argc, char** argv)
 
     // 初始化堆
     std::cout << "*** init heap ***" << std::endl;
-    memset(ptr_heap->heap, '\0', HEAP_SIZE);
-    ptr_heap->hp = BucketNum * sizeof(hItem);
-    ptr_heap->kvp = HEAP_SIZE;
+    memset(ptr_heap + 2 * sizeof(int), '\0', HEAP_SIZE);
+    *(int*)ptr_heap = 2 * sizeof(int) + BucketNum * sizeof(hItem);
+    *(int*)(ptr_heap + sizeof(int)) = HEAP_SIZE;
     // 初始化哈希表
-    hItem* hTable = (hItem*)(ptr_heap->heap);
+    hItem* hTable = (hItem*)(ptr_heap + 2 * sizeof(int));
     for (int i = 0; i < BucketNum; i++) {
         hTable[i].next = -1;
     }
