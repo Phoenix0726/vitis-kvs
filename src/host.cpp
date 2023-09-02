@@ -18,14 +18,17 @@
 #include <iostream>
 #include <fstream>
 #include <cstring>
+#include <fstream>
+#include <string>
+#include <time.h>
 
 #include "config.h"
 
 using std::vector;
 
-static const int DATA_SIZE = 5;
-static const int REQ_SIZE = 1024 * 1024;
-static const int RES_SIZE = 1024 * 1024;
+static const int DATA_SIZE = 1100000;
+static const int REQ_SIZE = 128 * DATA_SIZE;
+static const int RES_SIZE = 128 * DATA_SIZE;
 
 static const std::string error_message = 
     "Error: Result mismatch:\n"
@@ -65,29 +68,36 @@ int main(int argc, char** argv)
 
     // 初始化请求
     std::cout << "*** init reqs ***" << std::endl;
-    ReqItem reqs[DATA_SIZE];
-    reqs[0] = (ReqItem){'I', 2, 10, "h", "hello"};
-    reqs[1] = (ReqItem){'S', 2, 0, "h", ""};
-    reqs[2] = (ReqItem){'S', 2, 0, "w", ""};
-    reqs[3] = (ReqItem){'I', 2, 10, "w", "world"};
-    reqs[4] = (ReqItem){'S', 2, 0, "w", ""};
-    // ptr_req[5] = (ReqItem){'I', 14, "hihi"};
-    // ptr_req[6] = (ReqItem){'S', 14, "\0"};
-    // 把请求flatten到char数组中
+    std::ifstream fin("../dataset/query1M/requests.dat");
+    std::string line;
+    int req_num = 0;
     char* reqp = ptr_req;
-    for (int i = 0; i < DATA_SIZE; i++) {
-        *reqp = reqs[i].op;
-        *(int*)(reqp + 1) = reqs[i].ksize;
-        *(int*)(reqp + 5) = reqs[i].vsize;
-        strncpy(reqp + 9, reqs[i].key, reqs[i].ksize);
-        strncpy(reqp + 9 + reqs[i].ksize, reqs[i].value, reqs[i].vsize);
-        reqp += 9 + reqs[i].ksize + reqs[i].vsize;
+    while (getline(fin, line)) {
+        char op = line[0];
+        if (op == 'U') continue;    // 暂时还处理不了update操作
+        std::string key = line.substr(2, 24);
+        std::string value = (op == 'I') ? line.substr(34) : "";
+        int ksize = key.size() + 1;
+        int vsize = (op == 'I') ? value.size() + 1 : 0;
+        *reqp = op;                    // op
+        *(int*)(reqp + 1) = ksize;     // ksize
+        *(int*)(reqp + 5) = vsize;     // vsize
+        strncpy(reqp + 9, key.c_str(), ksize);                  // key
+        strncpy(reqp + 9 + ksize, value.c_str(), vsize);        // value
+        // std::cout << *reqp << std::endl;
+        // std::cout << *(int*)(reqp + 1) << std::endl;
+        // std::cout << *(int*)(reqp + 5) << std::endl;
+        // std::cout << reqp + 9 << std::endl;
+        // std::cout << reqp + 9 + ksize << std::endl;
+        reqp += 9 + ksize + vsize;
+        req_num++;
     }
+    fin.close();
     std::cout << "*** init reqs complete ***" << std::endl;
 
     // 初始化堆
     std::cout << "*** init heap ***" << std::endl;
-    memset(ptr_heap + 2 * sizeof(int), '\0', HEAP_SIZE);
+    memset(ptr_heap, '\0', HEAP_SIZE);
     *(int*)ptr_heap = 2 * sizeof(int) + BucketNum * sizeof(hItem);
     *(int*)(ptr_heap + sizeof(int)) = HEAP_SIZE;
     // 初始化哈希表
@@ -99,30 +109,38 @@ int main(int argc, char** argv)
 
     memset(ptr_res, '\0', RES_SIZE);
 
+    time_t start_t = time(NULL);
+    std::cout << "Kernel start..." << std::endl;
     q.enqueueMigrateMemObjects({buffer_req}, 0);
     q.enqueueMigrateMemObjects({buffer_heap}, 0);
     q.enqueueTask(kernel);
     q.enqueueMigrateMemObjects({buffer_res}, CL_MIGRATE_MEM_OBJECT_HOST);
     q.finish();
+    std::cout << "Kernel end" << std::endl;
+    time_t end_t = time(NULL);
+    std::cout << "*** Kernel execution time: " << difftime(end_t, start_t) << " ***" << std::endl;
 
     bool match = true;
     std::unordered_map<char*, char*> umap;
+    reqp = ptr_req;
+    char* resp = ptr_res;
     for (int i = 0; i < DATA_SIZE; i++) {
-        if (reqs[i].op == 'I') {
+        if (*reqp == 'I') {     // req[i].op
             // strcpy(umap[reqs[i].key], reqs[i].value);
-            umap[reqs[i].key] = reqs[i].value;
+            umap[reqp + 9] = reqp + 9 + *(int*)(reqp + 1);      // umap[key] = value
         }
-        if (reqs[i].op == 'S') {
+        if (*reqp == 'S') {
             char* host_result = nullptr;
-            host_result = umap[reqs[i].key];
-            if (host_result && strncmp(host_result, ptr_res + sizeof(int), *(int*)ptr_res)) {
-                std::cout << host_result << " " << ptr_res << std::endl;
-                printf(error_message.c_str(), i, host_result, ptr_res);
+            host_result = umap[reqp + 9];       // umap[key]
+            if (host_result && strncmp(host_result, resp + sizeof(int), *(int*)resp)) {
+                std::cout << host_result << " " << resp << std::endl;
+                printf(error_message.c_str(), i, host_result, resp);
                 match = false;
                 break;
             }
-            ptr_res += sizeof(int) + *(int*)ptr_res;
+            resp += sizeof(int) + *(int*)resp;      // resp += 4 + vsize
         }
+        reqp += 9 + *(int*)(reqp + 1) + *(int*)(reqp + 5);      // reqp += 9 + ksize + vsize
     }
     std::cout << "TEST " << (match ? "PASSED" : "FAILED") << std::endl;
     return (match ? EXIT_SUCCESS : EXIT_FAILURE);

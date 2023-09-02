@@ -90,6 +90,7 @@ extern "C" {
 void krnl_kvs(char* reqs, char* res, int batchsize, char* heap) {
     // hTable = (hItem*)(heap + 2 * sizeof(int));
     for (int i = 0; i < batchsize; i++) {
+        // printf("handle request %d\n", i);
         // 解析请求
         char op = *reqs;
         int ksize = *(int*)(reqs + 1);
@@ -101,17 +102,17 @@ void krnl_kvs(char* reqs, char* res, int batchsize, char* heap) {
         if (op == 'I') {
             insert(ksize, vsize, key, value, heap);
         }
-        else if (op == 'S') {
+        else if (op == 'R') {
             int kv_addr = find(key, ksize, heap);
             if (kv_addr == -1) {
-                printf("Search result: Not find\n");
+                // printf("Search result: Not find\n");
                 *(int*)res = 0;
                 res += sizeof(int);
                 continue;
             }
             *(int*)res = *(int*)(heap + kv_addr + sizeof(int));
             strcpy(heap + kv_addr + 2 * sizeof(int) + ksize, res + sizeof(int), *(int*)res);
-            printf("Search result: %s\n", heap + kv_addr + 2 * sizeof(int) + ksize);
+            // printf("Search result: %s\n", heap + kv_addr + 2 * sizeof(int) + ksize);
             res += sizeof(int) + *(int*)res;
         }
     }

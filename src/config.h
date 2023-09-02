@@ -1,11 +1,11 @@
 #ifndef _KVS_CONFIG_H_
 #define _KVS_CONFIG_H_
 
-#define BucketNum 13
+#define BucketNum 9973
 #define HashItemNum BucketNum * 4
 #define kvNum HashItemNum
 #define MarkSize 8
-#define HEAP_SIZE 1024 * 1024
+#define HEAP_SIZE 1024 * 1024 * 1024
 
 typedef long long ll;
 typedef unsigned long long ull;
@@ -42,7 +42,7 @@ struct ReqItem {    // 请求条目
 };
 
 struct Heap {
-    char heap[HEAP_SIZE];
+    char* heap;
     int hp, kvp;    // hp指向插入哈希条目位置，kvp指向插入kv条目位置 hp=>-------<=kvp
 };
 
