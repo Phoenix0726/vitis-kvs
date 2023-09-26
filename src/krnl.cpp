@@ -2,7 +2,8 @@
 #include <cstdio>
 
 
-hItem* hTable;
+// hItem* hTable;
+static int BucketNum;
 
 int hash1(char* key, int ksize) {   // 求hash条目位置
     ull sum = 0;
@@ -46,21 +47,24 @@ void strcpy(char* a, char* b, int size) {
 
 void insert_kv(int ksize, int vsize, char* key, char* value, char* heap) {
     int size = 2 * sizeof(int) + ksize + vsize;
-    *(int*)(heap + sizeof(int)) -= size;
-    *(int*)(heap + *(int*)(heap + sizeof(int)) + 0) = ksize;
+    *(int*)(heap + sizeof(int)) -= size;        // kvp -= size
+    *(int*)(heap + *(int*)(heap + sizeof(int)) + 0) = ksize;        // heap + kvp
     *(int*)(heap + *(int*)(heap + sizeof(int)) + sizeof(int)) = vsize;
     strcpy(key, (char*)(heap + *(int*)(heap + sizeof(int)) + 2 * sizeof(int)), ksize);
     strcpy(value, (char*)(heap + *(int*)(heap + sizeof(int)) + 2 * sizeof(int) + ksize), vsize);
 }
 
+
+int h;
+
 void insert_h(int ksize, int vsize, char* key, char* value, char* heap) {
     hItem* hTable = (hItem*)(heap + 2 * sizeof(int));
 
-    int h = hash1(key, ksize);
-    int hidx = *(int*)heap / sizeof(hItem);
+    int h = hash1(key, ksize);      //** 8s **//
+    int hidx = *(int*)heap / sizeof(hItem);     // hp / sizeof(hItem)
     if (ksize > MarkSize) {     // 存标记
         hTable[hidx].tag = true;
-        hTable[hidx].mk.mark = hash2(key, ksize);
+        hTable[hidx].mk.mark = hash2(key, ksize);    //** 8s **//
     }
     else {  // 存key本身
         hTable[hidx].tag = false;
@@ -75,10 +79,10 @@ void insert_h(int ksize, int vsize, char* key, char* value, char* heap) {
 }
 
 void insert(int ksize, int vsize, char* key, char* value, char* heap) {
-    if (find(key, ksize, heap) != -1) {
-        printf("The key already exist\n");
-        return;
-    }
+    // if (find(key, ksize, heap) != -1) {
+    //     printf("The key already exist\n");
+    //     return;
+    // }
     // 插入kv对
     insert_kv(ksize, vsize, key, value, heap);
     // 插入表条目
@@ -87,9 +91,10 @@ void insert(int ksize, int vsize, char* key, char* value, char* heap) {
 
 
 extern "C" {
-void krnl_kvs(char* reqs, char* res, int batchsize, char* heap) {
+void krnl_kvs(char* reqs, char* res, char* heap, int batchSize, int bucketNum) {
     // hTable = (hItem*)(heap + 2 * sizeof(int));
-    for (int i = 0; i < batchsize; i++) {
+    BucketNum = bucketNum;
+    for (int i = 0; i < batchSize; i++) {
         // printf("handle request %d\n", i);
         // 解析请求
         char op = *reqs;

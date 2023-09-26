@@ -18,17 +18,18 @@
 #include <iostream>
 #include <fstream>
 #include <cstring>
-#include <fstream>
 #include <string>
-#include <time.h>
+#include <ctime>
+#include <sys/time.h>
 
 #include "config.h"
 
 using std::vector;
 
-static const int DATA_SIZE = 1100000;
+static const int DATA_SIZE = 10000000;
 static const int REQ_SIZE = 128 * DATA_SIZE;
 static const int RES_SIZE = 128 * DATA_SIZE;
+static const int BucketNum = 900001;
 
 static const std::string error_message = 
     "Error: Result mismatch:\n"
@@ -59,8 +60,9 @@ int main(int argc, char** argv)
 
     OCL_CHECK(err, kernel.setArg(0, buffer_req));
     OCL_CHECK(err, kernel.setArg(1, buffer_res));
-    OCL_CHECK(err, kernel.setArg(2, DATA_SIZE));
-    OCL_CHECK(err, kernel.setArg(3, buffer_heap));
+    OCL_CHECK(err, kernel.setArg(2, buffer_heap));
+    OCL_CHECK(err, kernel.setArg(3, DATA_SIZE));
+    OCL_CHECK(err, kernel.setArg(4, BucketNum));
 
     char* ptr_req = (char*)q.enqueueMapBuffer(buffer_req, CL_TRUE, CL_MAP_WRITE, 0, REQ_SIZE);
     char* ptr_res = (char*)q.enqueueMapBuffer(buffer_res, CL_TRUE, CL_MAP_READ, 0, RES_SIZE);
@@ -68,9 +70,9 @@ int main(int argc, char** argv)
 
     // 初始化请求
     std::cout << "*** init reqs ***" << std::endl;
-    std::ifstream fin("../dataset/query1M/requests.dat");
+    std::ifstream fin("../dataset/query10M/requests.dat");
     std::string line;
-    int req_num = 0;
+    int batchSize = 0;
     char* reqp = ptr_req;
     while (getline(fin, line)) {
         char op = line[0];
@@ -90,9 +92,10 @@ int main(int argc, char** argv)
         // std::cout << reqp + 9 << std::endl;
         // std::cout << reqp + 9 + ksize << std::endl;
         reqp += 9 + ksize + vsize;
-        req_num++;
+        batchSize++;
     }
     fin.close();
+    OCL_CHECK(err, kernel.setArg(3, batchSize));
     std::cout << "*** init reqs complete ***" << std::endl;
 
     // 初始化堆
@@ -109,7 +112,11 @@ int main(int argc, char** argv)
 
     memset(ptr_res, '\0', RES_SIZE);
 
-    time_t start_t = time(NULL);
+    // time_t start_t = time(NULL);
+    // clock_t start_t, end_t;
+    // start_t = clock();
+    struct timeval start_t, end_t;
+    gettimeofday(&start_t, NULL);
     std::cout << "Kernel start..." << std::endl;
     q.enqueueMigrateMemObjects({buffer_req}, 0);
     q.enqueueMigrateMemObjects({buffer_heap}, 0);
@@ -117,14 +124,19 @@ int main(int argc, char** argv)
     q.enqueueMigrateMemObjects({buffer_res}, CL_MIGRATE_MEM_OBJECT_HOST);
     q.finish();
     std::cout << "Kernel end" << std::endl;
-    time_t end_t = time(NULL);
-    std::cout << "*** Kernel execution time: " << difftime(end_t, start_t) << " ***" << std::endl;
+    // time_t end_t = time(NULL);
+    // end_t = clock();
+    gettimeofday(&end_t, NULL);
+    // std::cout << "*** Kernel execution time: " << difftime(end_t, start_t) << " ***" << std::endl;
+    // std::cout << "*** Kernel execution time: " << double(end_t - start_t) / CLOCKS_PER_SEC << std::endl;
+    double timeuse = (end_t.tv_sec - start_t.tv_sec) + (double)(end_t.tv_usec - start_t.tv_usec) / 1e6;
+    std::cout << "*** Kernel execution time: " << timeuse << " ***" << std::endl;
 
     bool match = true;
     std::unordered_map<char*, char*> umap;
     reqp = ptr_req;
     char* resp = ptr_res;
-    for (int i = 0; i < DATA_SIZE; i++) {
+    for (int i = 0; i < batchSize; i++) {
         if (*reqp == 'I') {     // req[i].op
             // strcpy(umap[reqs[i].key], reqs[i].value);
             umap[reqp + 9] = reqp + 9 + *(int*)(reqp + 1);      // umap[key] = value
@@ -133,8 +145,8 @@ int main(int argc, char** argv)
             char* host_result = nullptr;
             host_result = umap[reqp + 9];       // umap[key]
             if (host_result && strncmp(host_result, resp + sizeof(int), *(int*)resp)) {
-                std::cout << host_result << " " << resp << std::endl;
-                printf(error_message.c_str(), i, host_result, resp);
+                std::cout << host_result << " " << resp + sizeof(int) << std::endl;
+                printf(error_message.c_str(), i, host_result, resp + sizeof(int));
                 match = false;
                 break;
             }

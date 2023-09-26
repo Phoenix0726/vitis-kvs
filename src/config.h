@@ -1,9 +1,9 @@
 #ifndef _KVS_CONFIG_H_
 #define _KVS_CONFIG_H_
 
-#define BucketNum 9973
-#define HashItemNum BucketNum * 4
-#define kvNum HashItemNum
+// #define BucketNum 9973
+// #define HashItemNum BucketNum * 4
+// #define kvNum HashItemNum
 #define MarkSize 8
 #define HEAP_SIZE 1024 * 1024 * 1024
 
